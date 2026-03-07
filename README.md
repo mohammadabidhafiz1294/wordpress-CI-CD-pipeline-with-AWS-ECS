@@ -1,212 +1,307 @@
-# WordPress CI/CD on AWS ECS
+# WordPress CI/CD Pipeline on AWS ECS
 
-This project implements a containerized WordPress application deployed on AWS ECS Fargate with a complete CI/CD pipeline using GitHub Actions. The infrastructure is provisioned using Terraform and follows modern DevOps practices.
+[![AWS](https://img.shields.io/badge/AWS-ECS_Fargate-FF9900?style=flat&logo=amazon-aws)](https://aws.amazon.com/ecs/)
+[![Terraform](https://img.shields.io/badge/Terraform-7B4BC9?style=flat&logo=terraform)](https://www.terraform.io/)
+[![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker)](https://www.docker.com/)
+[![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=flat&logo=github-actions)](https://github.com/features/actions)
+[![CI/CD](https://img.shields.io/badge/CI/CD-Blue--Green_Deployment-00C7B7?style=flat)](https://aws.amazon.com/codedeploy/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-## Architecture Overview
+A production-ready **WordPress deployment** on AWS ECS Fargate with a complete **CI/CD pipeline** using GitHub Actions and blue-green deployment strategy. Infrastructure provisioned with Terraform.
 
-![Architecture Diagram](./architecture-diagram.webp)
+## 🚀 Key Features
 
-The architecture consists of:
+| Feature | Description |
+|---------|-------------|
+| **Blue-Green Deployment** | Zero-downtime deployments using AWS CodeDeploy |
+| **OIDC Authentication** | Secure AWS access without long-lived credentials |
+| **Shared EFS Storage** | Persistent WordPress content across ECS and EC2 |
+| **Host-based Routing** | Single ALB routes traffic based on domain |
+| **Auto-scaling** | ECS Fargate with on-demand and spot capacity |
+| **Infrastructure as Code** | Fully modular Terraform codebase |
 
-- **VPC (10.0.0.0/16)** - Isolated network environment
-- **Load Balancer** - Routes traffic to ECS services
-- **Public Subnets (10.0.1.0/24, 10.0.2.0/24)** - Houses Internet Gateway and ECS Fargate instances
-- **Private Subnets (10.0.3.0/24, 10.0.4.0/24)** - Contains RDS database, protected from direct internet access
-- **ECS Fargate** - Runs WordPress and Nginx containers
-- **Amazon RDS** - Managed MySQL database for WordPress
-- **ECR** - Container registry for WordPress images
-- **OIDC Authentication** - Secure authentication for CI/CD pipeline
-- **GitHub Actions** - Automated CI/CD pipeline
+## 🏗️ Architecture
 
-## Components
+![Architecture Diagram](./wordpress-pipeline-CICD.pdf)
 
-### 1. AWS Infrastructure
-- **VPC & Networking**: Segregated public and private subnets
-- **ECS Cluster**: Fargate-based containerized deployment
-- **RDS**: Managed MySQL database
-- **Load Balancer**: Routes traffic to containers
-- **Security Groups**: Controls access to resources
+### High-Level Architecture
 
-### 2. CI/CD Pipeline
-- **GitHub Actions**: Automated workflows for CI/CD
-- **OIDC Authentication**: Secure AWS access
-- **ECR**: Storage for Docker images
-- **Git Version Control**: Source code management
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                              AWS Cloud                                  │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                        VPC (10.0.0.0/16)                        │   │
+│  │                                                                  │   │
+│  │  ┌────────────────────┐        ┌────────────────────────────┐  │   │
+│  │  │  Public Subnets   │        │     Private Subnets        │  │   │
+│  │  │  10.0.1.0/24 (AZ1)│        │  10.0.3.0/24 (AZ1)        │  │   │
+│  │  │  10.0.2.0/24 (AZ2)│        │  10.0.4.0/24 (AZ2)        │  │   │
+│  │  └─────────┬──────────┘        └─────────────┬─────────────┘  │   │
+│  │            │                                 │                │   │
+│  │            ▼                                 ▼                │   │
+│  │  ┌────────────────────┐             ┌────────────────────┐    │   │
+│  │  │  Internet Gateway │             │   NAT Gateway     │    │   │
+│  │  └────────────────────┘             └────────────────────┘    │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                     Public Subnet Components                    │   │
+│  │                                                                  │   │
+│  │   ┌──────────────────┐                                          │   │
+│  │   │  Application    │                                          │   │
+│  │   │  Load Balancer  │◄────── Host-based Routing               │   │
+│  │   │  (Single ALB)   │         • domain.com → ECS              │   │
+│  │   └────────┬─────────┘         • admin.domain.com → EC2       │   │
+│  │            │                                                    │   │
+│  │            ▼                                                    │   │
+│  │   ┌──────────────────┐   ┌──────────────────┐   ┌────────────┐ │   │
+│  │   │  Target Group   │   │  Target Group   │   │  Target    │ │   │
+│  │   │  (ECS Blue)     │   │  (ECS Green)    │   │  Group     │ │   │
+│  │   └──────────────────┘   └──────────────────┘   │  (EC2)     │ │   │
+│  │                                                └────────────┘ │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │                    Private Subnet Components                   │   │
+│  │                                                                  │   │
+│  │  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌─────────┐          │   │
+│  │  │ECS Prim │  │ECS Spot │  │  RDS    │  │   EFS   │          │   │
+│  │  │FARGATE  │  │FARGATE_ │  │ MySQL   │  │  (wp-   │          │   │
+│  │  │(nginx+  │  │ SPOT    │  │Database │  │ content)│          │   │
+│  │  │ PHP-FPM)│  │(nginx+  │  │         │  │         │          │   │
+│  │  │         │  │ PHP-FPM)│  │         │  │         │          │   │
+│  │  └────┬────┘  └────┬────┘  └────┬────┘  └────┬────┘          │   │
+│  │       │            │            │            │                │   │
+│  │       └────────────┴────────────┴────────────┘                │   │
+│  │                         │                                      │   │
+│  │                         ▼                                      │   │
+│  │               ┌──────────────────┐                             │   │
+│  │               │   EC2 Admin     │                             │   │
+│  │               │   (t3.micro)    │                             │   │
+│  │               └──────────────────┘                             │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    ▲
+                                    │
+                                    ▼
+                            ┌───────────────┐
+                            │    Internet   │
+                            │   (Users)     │
+                            └───────────────┘
+```
 
-### 3. Application
-- **WordPress**: Content management system running on PHP-FPM
-- **Nginx**: Web server as reverse proxy
+## 📁 Project Structure
 
-## GitHub Actions Workflow
+```
+.
+├── .github/
+│   └── workflows/
+│       └── wordpress-ci-cd.yml     # GitHub Actions CI/CD workflow
+├── docker/
+│   └── wordpress-fpm/
+│       ├── Dockerfile               # WordPress + PHP-FPM container
+│       └── nginx.conf               # Nginx reverse proxy config
+├── terraform/
+│   ├── main.tf                      # Root Terraform configuration
+│   ├── variables.tf                 # Input variables
+│   ├── outputs.tf                  # Output values
+│   ├── terraform.tfvars.example    # Example variables file
+│   ├── ARCHITECTURE.md             # Detailed architecture docs
+│   ├── CODE_DEPLOY.md              # Deployment configuration
+│   ├── TERRAFORM.md                # Terraform best practices
+│   └── modules/                     # Modular Terraform components
+│       ├── vpc/                     # VPC networking
+│       ├── security/                # Security groups
+│       ├── iam/                     # IAM roles (ECS execution/task)
+│       ├── ecr/                     # ECR container registry
+│       ├── efs/                     # EFS shared storage
+│       ├── rds/                     # RDS MySQL database
+│       ├── alb/                     # Application Load Balancer
+│       ├── ecs/                     # ECS Fargate cluster
+│       ├── ec2-admin/               # EC2 admin server
+│       ├── route53/                 # DNS records
+│       └── codedeploy/              # CodeDeploy configuration
+├── wordpress/
+│   └── README.md                    # WordPress configuration notes
+├── wordpress-pipeline-CICD.pdf     # Architecture diagram (PDF)
+├── LICENSE
+└── README.md                        # This file
+```
 
-The project includes a CI/CD workflow that automatically builds and deploys WordPress changes to AWS ECS Fargate.
+## 🔄 CI/CD Pipeline
 
-### How to Use the Workflow
+### Workflow Overview
 
-1. **Set up required GitHub Secrets**:
-   - `AWS_REGION`: Your AWS region (e.g., us-west-2)
-   - `ECR_REPOSITORY`: Name of your ECR repository
-   - `ECS_CLUSTER`: Name of your ECS cluster
-   - `ECS_SERVICE`: Name of your ECS service
-   - `ECS_TASK_DEFINITION`: Name of your ECS task definition
-   - `AWS_ROLE_ARN`: ARN of the IAM role with permissions to deploy to ECS
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        CI/CD PIPELINE FLOW                              │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                         │
+│  GitHub Repository                                                      │
+│       │                                                                  │
+│       │ Push to main branch (wordpress/ or docker/ changed)            │
+│       ▼                                                                  │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │              GitHub Actions Triggered                          │   │
+│  │                                                                  │   │
+│  │  Job: build-and-push                                            │   │
+│  │  ├── Checkout code                                              │   │
+│  │  ├── Configure AWS credentials (OIDC)                           │   │
+│  │  ├── Login to ECR                                               │   │
+│  │  ├── Build Docker image (with cache)                           │   │
+│  │  │   ├── Base: wordpress:6.4.3-php8.2-fpm-alpine              │   │
+│  │  │   └── Custom nginx configuration                            │   │
+│  │  └── Push to ECR (tagged with SHA + latest)                    │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│       │                                                                  │
+│       │ New Image Tag                                                 │
+│       ▼                                                                  │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │              Job: create-deployment                             │   │
+│  │                                                                  │   │
+│  │  ├── Get current task definition                                │   │
+│  │  ├── Create new task definition (update image)                 │   │
+│  │  ├── Register new revision                                      │   │
+│  │  ├── Create CodeDeploy deployment (Blue-Green)                │   │
+│  │  └── Wait for deployment completion                            │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│       │                                                                  │
+│       │ Success/Failure                                               │
+│       ▼                                                                  │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │              Job: verify + notify                               │   │
+│  │                                                                  │   │
+│  │  ├── Verify ECS service status                                  │   │
+│  │  ├── Check ALB target group health                             │   │
+│  │  ├── Send notification (success/failure)                        │   │
+│  │  └── Auto-rollback on failure                                   │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                         │
+└─────────────────────────────────────────────────────────────────────────┘
+```
 
-2. **Configure OIDC Authentication**:
-   - Follow the [AWS guide for OIDC configuration](https://docs.github.com/en/actions/deployment/security-hardening-your-deployments/configuring-openid-connect-in-amazon-web-services)
-   - Create an IAM role with the following trusted policy:
-   ```json
-   {
-     "Version": "2012-10-17",
-     "Statement": [
-       {
-         "Effect": "Allow",
-         "Principal": {
-           "Federated": "arn:aws:iam::YOUR_ACCOUNT_ID:oidc-provider/token.actions.githubusercontent.com"
-         },
-         "Action": "sts:AssumeRoleWithWebIdentity",
-         "Condition": {
-           "StringEquals": {
-             "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
-           },
-           "StringLike": {
-             "token.actions.githubusercontent.com:sub": "repo:YOUR_GITHUB_USERNAME/YOUR_REPO_NAME:*"
-           }
-         }
-       }
-     ]
-   }
-   ```
+### Pipeline Features
 
-3. **WordPress Code Structure**:
-   - Place your WordPress code in the `wordpress/` directory
-   - Store Docker configuration files in the `docker/wordpress-fpm/` directory
+- **OIDC Authentication**: Uses AWS IAM OpenID Connect for secure, credential-less access
+- **Docker Buildx**: Multi-platform build support with GitHub Actions cache
+- **Image Tagging**: Tags images with commit SHA and `latest`
+- **Blue-Green Deployment**: CodeDeploy manages traffic switch
+- **Health Checks**: Verifies ECS service and ALB target groups
+- **Auto Rollback**: Automatically rolls back on deployment failure
+- **Manual Trigger**: Can be triggered manually via GitHub Actions UI
 
-4. **Workflow Trigger**:
-   - The workflow automatically runs when:
-     - Changes are pushed to the `main` branch
-     - Files are modified in the `wordpress/` or `docker/` directories
-   - You can also manually trigger the workflow from the GitHub Actions tab
+## 🛠️ Tech Stack
 
-5. **Monitoring Deployments**:
-   - Track deployment progress in the GitHub Actions tab
-   - Check ECS console for task status
-   - Verify your changes on the live WordPress site after deployment completes
+| Category | Technology | Purpose |
+|----------|------------|---------|
+| **Cloud** | AWS | Cloud infrastructure provider |
+| **Container** | ECS Fargate | Serverless container orchestration |
+| **Database** | Amazon RDS MySQL | Managed database |
+| **Storage** | Amazon EFS | Shared file storage |
+| **Load Balancer** | Application Load Balancer | Traffic routing |
+| **DNS** | Route53 | Domain management |
+| **CI/CD** | GitHub Actions | Automation pipeline |
+| **Deployment** | AWS CodeDeploy | Blue-green deployments |
+| **IaC** | Terraform | Infrastructure provisioning |
+| **Containerization** | Docker | Application packaging |
 
-### Security Considerations for the CI/CD Pipeline
+## 📋 Prerequisites
 
-- The workflow uses OIDC authentication instead of long-lived AWS access keys
-- ECR images are tagged with both commit SHA and 'latest' for traceability
-- The pipeline waits for service stability before completing
-- Permissions follow the principle of least privilege
-
-## Prerequisites
-
-- AWS Account
+- AWS Account with appropriate permissions
 - GitHub Account
-- Terraform installed locally
+- Domain name (configured in Route53)
+- Terraform >= 1.0.0
 - AWS CLI configured
 - Docker installed locally
 
-## Setup Instructions
+## 🚦 Getting Started
 
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/yourusername/ECS-project-for-Wordpress-CI-CD.git
-cd ECS-project-for-Wordpress-CI-CD
+git clone https://github.com/mohammadabidhafiz1294/wordpress-CI-CD-pipeline-with-AWS-ECS.git
+cd wordpress-CI-CD-pipeline-with-AWS-ECS
 ```
 
 ### 2. Configure AWS Credentials
-
-Create an IAM user with appropriate permissions and configure AWS CLI:
 
 ```bash
 aws configure
 ```
 
-### 3. Set up GitHub Repository Secrets
+### 3. Set Up GitHub Secrets
 
-Add the following secrets to your GitHub repository:
-- `AWS_REGION`
-- `ECR_REPOSITORY`
+Navigate to your repository's **Settings → Secrets and variables → Actions** and add:
 
-### 4. Deploy Infrastructure with Terraform
+| Secret | Description | Example |
+|--------|-------------|---------|
+| `AWS_REGION` | AWS region | `us-west-2` |
+| `AWS_ACCOUNT_ID` | AWS account ID | `123456789012` |
+| `AWS_ROLE_ARN` | IAM role for deployment | `arn:aws:iam::...` |
+| `ECR_REPOSITORY` | ECR repository name | `wordpress` |
+| `ECS_CLUSTER` | ECS cluster name | `wordpress-cluster` |
+| `ECS_SERVICE` | ECS service name | `wordpress-primary` |
+| `DOMAIN_NAME` | Your domain | `example.com` |
+
+### 4. Configure Terraform Variables
 
 ```bash
 cd terraform
+cp terraform.tfvars.example terraform.tfvars
+# Edit terraform.tfvars with your values
+```
+
+### 5. Deploy Infrastructure
+
+```bash
 terraform init
 terraform plan
 terraform apply
 ```
 
-## CI/CD Workflow
+### 6. Trigger CI/CD Pipeline
 
-The CI/CD pipeline follows these steps:
+Push changes to the `main` branch:
 
-1. **Code Change**: Developer commits code to the GitHub repository
-2. **GitHub Actions Trigger**: Automated workflow starts
-3. **Build**: WordPress container is built with the latest code
-4. **Test**: Automated tests run on the container
-5. **Push to ECR**: Successful builds are pushed to ECR
-6. **Deploy to ECS**: The ECS service is updated with the new container image
-
-## Infrastructure Details
-
-### ECS Configuration
-
-The ECS cluster runs two containers:
-1. **Nginx**: Handles HTTP requests and forwards to WordPress
-2. **WordPress**: PHP-FPM implementation of WordPress
-
-The containers share data through an EFS volume mount that persists WordPress files.
-
-### Networking
-
-- **Domain**: domain.com
-- **Admin Access**: domian.com/admin
-- **VPC CIDR**: 11.0.0.0/24
-- **Public Subnets**: 11.0.1.0/24, 11.0.2.0/24
-- **Private Subnets**: 11.0.3.0/24, 11.0.4.0/24
-
-## Usage
-
-### Accessing WordPress
-
-After deployment, WordPress will be accessible via the Load Balancer URL:
-
-```
-http://[load-balancer-dns]/
+```bash
+git add .
+git commit -m "Deploy WordPress"
+git push origin main
 ```
 
-### Administering WordPress
+## 🔐 Security
 
-Access the WordPress admin panel at:
+- **OIDC Authentication**: No long-lived AWS credentials stored in GitHub
+- **Least Privilege**: IAM roles with minimal required permissions
+- **Private Subnets**: RDS database in private subnets
+- **Security Groups**: Restrictive inbound/outbound rules
+- **Secrets Management**: Database credentials via Terraform variables
 
-```
-http://[load-balancer-dns]/wp-admin/
-```
+## 📊 Monitoring
 
-## Monitoring and Maintenance
+- **ECS Container Insights**: Container-level monitoring
+- **CloudWatch Logs**: Centralized logging
+- **ALB Access Logs**: Request/response logging
+- **CodeDeploy**: Deployment status tracking
 
-- ECS Container Insights is enabled for monitoring
-- CloudWatch logs capture container output
-- Regular database backups are recommended
-
-## Security Considerations
-
-- OIDC authentication secures the CI/CD pipeline
-- Private subnets protect database from direct access
-- Security groups limit traffic to required ports only
-- Secrets are managed through GitHub Secrets and AWS Secrets Manager
-
-## Contributing
+## 🤝 Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing-feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
 5. Open a Pull Request
 
-## License
+## 📄 License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## 👤 Author
+
+**Mohammad Abid Hafiz**
+- GitHub: [@mohammadabidhafiz1294](https://github.com/mohammadabidhafiz1294)
+
+---
+
+⭐️ If you found this project useful, please consider giving it a star!
