@@ -4,8 +4,8 @@ resource "aws_db_subnet_group" "wordpress" {
 }
 
 resource "aws_db_instance" "wordpress" {
-  identifier           = "wordpress"
-  allocated_storage    = 20
+  identifier          = "wordpress"
+  allocated_storage   = 20
   storage_type        = "gp2"
   engine              = "mysql"
   engine_version      = "8.0"

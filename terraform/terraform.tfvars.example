@@ -1,0 +1,33 @@
+# AWS Configuration
+aws_region = "us-east-1"
+
+# VPC Configuration
+vpc_cidr        = "11.0.0.0/16"
+public_subnets  = ["11.0.1.0/24", "11.0.2.0/24"]
+private_subnets = ["11.0.3.0/24", "11.0.4.0/24"]
+availability_zones = ["us-east-1a", "us-east-1b"]
+
+# Database Configuration
+database_name     = "wordpress"
+database_user     = "wordpress"
+database_password = "CHANGE_ME"  # Set a secure password
+db_instance_class = "db.t3.micro"
+
+# ECR Configuration
+repository_name = "wordpress"
+
+# Domain Configuration
+domain_name = "example.com"  # Replace with your domain
+
+# ECS Task Configuration
+task_cpu    = 256
+task_memory = 512
+
+# Container Images (optional overrides)
+# nginx_image      = "nginx:1.21-alpine"
+# wordpress_image  = "wordpress:5.9-fpm-alpine"
+
+# Container Configuration (optional overrides)
+# container_port    = 80
+# wordpress_memory = 256
+# nginx_memory     = 256

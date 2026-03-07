@@ -1,0 +1,265 @@
+name: WordPress CI/CD Pipeline with Blue-Green Deployment
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'wordpress/**'
+      - 'docker/**'
+      - '.github/workflows/wordpress-ci-cd.yml'
+  workflow_dispatch:
+    inputs:
+      rollback:
+        description: 'Rollback to previous deployment'
+        required: false
+        default: 'false'
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+  ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}
+  ECS_SERVICE: ${{ secrets.ECS_SERVICE }}
+  APP_NAME: wordpress-ecs
+  DEPLOYMENT_GROUP: wordpress-production
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+    
+    outputs:
+      image-tag: ${{ steps.meta.outputs.tags }}
+      image-digest: ${{ steps.push.outputs.digest }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+      
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}
+          tags: |
+            type=sha,prefix=
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+      
+      - name: Build and push Docker image
+        id: push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./docker/wordpress-fpm
+          file: ./docker/wordpress-fpm/Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+  create-deployment:
+    name: Create CodeDeploy Deployment
+    needs: build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Get current task definition
+        id: task-def
+        run: |
+          # Get current task definition
+          TASK_DEF=$(aws ecs describe-task-definition \
+            --task-definition ${{ env.ECS_SERVICE }} \
+            --query 'taskDefinition' \
+            --output json)
+          
+          echo "task_definition=$TASK_DEF" >> $GITHUB_OUTPUT
+      
+      - name: Create new task definition revision
+        id: new-task-def
+        run: |
+          # Update image in task definition
+          NEW_TASK_DEF=$(echo '${{ steps.task-def.outputs.task_definition }}' | \
+            jq --arg IMAGE "${{ needs.build.outputs.image-tag }}" \
+            '.containerDefinitions[0].image = $IMAGE | .containerDefinitions[1].image = $IMAGE')
+          
+          # Register new task definition
+          NEW_REVISION=$(aws ecs register-task-definition \
+            --cli-input-json "$NEW_TASK_DEF" \
+            --query 'taskDefinition.revision' \
+            --output text)
+          
+          echo "new_revision=$NEW_REVISION" >> $GITHUB_OUTPUT
+          echo "new_task_def_arn=arn:aws:ecs:${{ env.AWS_REGION }}:${{ secrets.AWS_ACCOUNT_ID }}:task-definition/${{ env.ECS_SERVICE }}:$NEW_REVISION" >> $GITHUB_OUTPUT
+      
+      - name: Create CodeDeploy deployment
+        id: deployment
+        run: |
+          # Create appspec file for CodeDeploy
+          cat > appspec.yml << 'EOF'
+          version: 1
+          Resources:
+            - TargetService:
+                Type: AWS::ECS::Service
+                Properties:
+                  TaskDefinition: ${{ steps.new-task-def.outputs.new_task_def_arn }}
+                  LoadBalancerInfo:
+                    ContainerName: nginx
+                    ContainerPort: 80
+          EOF
+          
+          # Create CodeDeploy deployment
+          DEPLOYMENT_ID=$(aws deploy create-deployment \
+            --application-name ${{ env.APP_NAME }} \
+            --deployment-group-name ${{ env.DEPLOYMENT_GROUP }} \
+            --revision '{"revisionType": "AppSpecContent", "appSpecContent": {"content": "{\"version\":1,\"Resources\":[{\"TargetService\":{\"Type\":\"AWS::ECS::Service\",\"Properties\":{\"TaskDefinition\":\"${{ steps.new-task-def.outputs.new_task_def_arn }}\",\"LoadBalancerInfo\":{\"ContainerName\":\"nginx\",\"ContainerPort\":80}}}]}"}}' \
+            --query 'deploymentId' \
+            --output text)
+          
+          echo "deployment_id=$DEPLOYMENT_ID" >> $GITHUB_OUTPUT
+          echo "Deployment ID: $DEPLOYMENT_ID"
+      
+      - name: Wait for deployment to complete
+        run: |
+          echo "Waiting for CodeDeploy deployment to complete..."
+          aws deploy wait deployment-successful \
+            --id ${{ steps.deployment.outputs.deployment_id }} \
+            --region ${{ env.AWS_REGION }}
+          
+          echo "Deployment completed successfully!"
+
+  verify:
+    name: Verify Deployment
+    needs: create-deployment
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Verify ECS service
+        run: |
+          echo "Checking ECS service status..."
+          aws ecs describe-services \
+            --services ${{ env.ECS_SERVICE }} \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --query 'services[0].{status:status,desired:desiredCount,running:runningCount,tasks:deployments[0].status}' \
+            --output table
+      
+      - name: Check ALB target groups
+        run: |
+          echo "Checking ALB target group health..."
+          
+          # Get target group ARNs
+          BLUE_TG=$(aws elbv2 describe-target-groups \
+            --names wordpress-blue-tg \
+            --query 'TargetGroups[0].TargetGroupArn' \
+            --output text)
+          
+          GREEN_TG=$(aws elbv2 describe-target-groups \
+            --names wordpress-green-tg \
+            --query 'TargetGroups[0].TargetGroupArn' \
+            --output text)
+          
+          # Check health
+          echo "Blue target group health:"
+          aws elbv2 describe-target-health \
+            --target-group-arn "$BLUE_TG" \
+            --query 'TargetHealthDescriptions[].TargetHealth' \
+            --output table
+          
+          echo "Green target group health:"
+          aws elbv2 describe-target-health \
+            --target-group-arn "$GREEN_TG" \
+            --query 'TargetHealthDescriptions[].TargetHealth' \
+            --output table
+      
+      - name: Success notification
+        if: success()
+        run: |
+          echo "✅ WordPress blue-green deployment completed successfully!"
+          echo "Public URL: https://${{ secrets.DOMAIN_NAME }}"
+          echo "Admin URL: https://admin.${{ secrets.DOMAIN_NAME }}"
+      
+      - name: Failure notification
+        if: failure()
+        run: |
+          echo "❌ Deployment failed! Initiating rollback..."
+          # CodeDeploy will automatically rollback on failure
+
+  rollback:
+    name: Manual Rollback
+    needs: verify
+    if: failure()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Get last successful deployment
+        run: |
+          echo "Getting last successful deployment for rollback..."
+          
+          LAST_SUCCESS=$(aws deploy list-deployments \
+            --application-name ${{ env.APP_NAME }} \
+            --deployment-group-name ${{ env.DEPLOYMENT_GROUP }} \
+            --status-contains Succeeded \
+            --max-items 2 \
+            --query 'deployments[1]' \
+            --output text)
+          
+          if [ -n "$LAST_SUCCESS" ]; then
+            echo "Creating rollback deployment..."
+            aws deploy create-deployment \
+              --application-name ${{ env.APP_NAME }} \
+              --deployment-group-name ${{ env.DEPLOYMENT_GROUP }} \
+              --revision '{"revisionType": "DeploymentId", "deploymentId": "'"$LAST_SUCCESS"'"}'
+            
+            echo "Rollback initiated!"
+          else
+            echo "No previous deployment found for rollback"
+          fi
+
+  notify:
+    name: Notify Deployment Status
+    needs: [verify, rollback]
+    if: always()
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Send deployment notification
+        run: |
+          if [ "${{ needs.verify.result }}" == "success" ]; then
+            echo "✅ Deployment SUCCESS"
+          else
+            echo "❌ Deployment FAILED - Rollback initiated"
+          fi

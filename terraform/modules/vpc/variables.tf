@@ -18,5 +18,5 @@ variable "private_subnets" {
 variable "availability_zones" {
   description = "Availability zones"
   type        = list(string)
-  default     = ["us-east-1a", "us-east-1b"]  # Adjust according to your region
+  default     = ["us-east-1a", "us-east-1b"] # Adjust according to your region
 }

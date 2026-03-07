@@ -1,5 +1,4 @@
-// Output values for the Wordpress ECS project
-// Add outputs as needed
+// Output values for the WordPress ECS project
 
 output "vpc_id" {
   description = "ID of the VPC"
@@ -8,12 +7,12 @@ output "vpc_id" {
 
 output "public_subnet_ids" {
   description = "IDs of public subnets"
-  value       = module.vpc.public_subnet_ids
+  value       = module.vpc.public_subnets
 }
 
 output "private_subnet_ids" {
   description = "IDs of private subnets"
-  value       = module.vpc.private_subnet_ids
+  value       = module.vpc.private_subnets
 }
 
 output "alb_dns_name" {
@@ -21,14 +20,19 @@ output "alb_dns_name" {
   value       = module.alb.alb_dns_name
 }
 
+output "public_url" {
+  description = "Public URL of the WordPress site"
+  value       = "http://${var.domain_name}"
+}
+
+output "admin_url" {
+  description = "Admin URL of the WordPress site"
+  value       = "http://admin.${var.domain_name}"
+}
+
 output "ecr_repository_url" {
   description = "URL of the ECR repository"
   value       = module.ecr.repository_url
-}
-
-output "wordpress_url" {
-  description = "URL of the WordPress site"
-  value       = "https://${var.domain_name}"
 }
 
 output "rds_endpoint" {
@@ -38,5 +42,25 @@ output "rds_endpoint" {
 
 output "ecs_cluster_name" {
   description = "Name of the ECS cluster"
-  value       = module.ecs.cluster_name
+  value       = module.ecs_primary.cluster_name
+}
+
+output "ecs_primary_service_name" {
+  description = "Name of the primary ECS service"
+  value       = module.ecs_primary.service_name
+}
+
+output "ecs_backup_service_name" {
+  description = "Name of the backup ECS service"
+  value       = module.ecs_backup.service_name
+}
+
+output "efs_dns_name" {
+  description = "DNS name of the EFS filesystem"
+  value       = module.efs.efs_dns_name
+}
+
+output "ec2_admin_instance_id" {
+  description = "ID of the EC2 admin instance"
+  value       = module.ec2_admin.instance_id
 }

@@ -1,14 +1,15 @@
 # Terraform
 .terraform/
+.opencode
 *.tfstate
 *.tfstate.*
 crash.log
 *.tfvars
+!*.example.tfvars
 override.tf
 override.tf.json
 *_override.tf
 *_override.tf.json
-.terraform.lock.hcl
 
 # Sensitive files
 *.pem
@@ -40,3 +41,5 @@ node_modules/
 *.bak
 *.swp
 .idea/
+
+.ruff_cache/
