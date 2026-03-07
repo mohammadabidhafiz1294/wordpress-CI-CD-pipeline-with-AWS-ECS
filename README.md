@@ -22,7 +22,7 @@ A production-ready **WordPress deployment** on AWS ECS Fargate with a complete *
 
 ## 🏗️ Architecture
 
-![Architecture Diagram](./wordpress-pipeline-CICD.pdf)
+![Architecture Diagram](wordpress-pipeline-CICD.pdf)
 
 ### High-Level Architecture
 
