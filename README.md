@@ -11,18 +11,18 @@ A production-ready **WordPress deployment** on AWS ECS Fargate with a complete *
 
 ## 🚀 Key Features
 
-| Feature | Description |
-|---------|-------------|
-| **Blue-Green Deployment** | Zero-downtime deployments using AWS CodeDeploy |
-| **OIDC Authentication** | Secure AWS access without long-lived credentials |
-| **Shared EFS Storage** | Persistent WordPress content across ECS and EC2 |
-| **Host-based Routing** | Single ALB routes traffic based on domain |
-| **Auto-scaling** | ECS Fargate with on-demand and spot capacity |
-| **Infrastructure as Code** | Fully modular Terraform codebase |
+| Feature                    | Description                                      |
+| -------------------------- | ------------------------------------------------ |
+| **Blue-Green Deployment**  | Zero-downtime deployments using AWS CodeDeploy   |
+| **OIDC Authentication**    | Secure AWS access without long-lived credentials |
+| **Shared EFS Storage**     | Persistent WordPress content across ECS and EC2  |
+| **Host-based Routing**     | Single ALB routes traffic based on domain        |
+| **Auto-scaling**           | ECS Fargate with on-demand and spot capacity     |
+| **Infrastructure as Code** | Fully modular Terraform codebase                 |
 
 ## 🏗️ Architecture
 
-![Architecture Diagram](wordpress-pipeline-CICD.pdf)
+![Architecture Diagram](./wordpress-access-flow.png)
 
 ### High-Level Architecture
 
@@ -193,18 +193,18 @@ A production-ready **WordPress deployment** on AWS ECS Fargate with a complete *
 
 ## 🛠️ Tech Stack
 
-| Category | Technology | Purpose |
-|----------|------------|---------|
-| **Cloud** | AWS | Cloud infrastructure provider |
-| **Container** | ECS Fargate | Serverless container orchestration |
-| **Database** | Amazon RDS MySQL | Managed database |
-| **Storage** | Amazon EFS | Shared file storage |
-| **Load Balancer** | Application Load Balancer | Traffic routing |
-| **DNS** | Route53 | Domain management |
-| **CI/CD** | GitHub Actions | Automation pipeline |
-| **Deployment** | AWS CodeDeploy | Blue-green deployments |
-| **IaC** | Terraform | Infrastructure provisioning |
-| **Containerization** | Docker | Application packaging |
+| Category             | Technology                | Purpose                            |
+| -------------------- | ------------------------- | ---------------------------------- |
+| **Cloud**            | AWS                       | Cloud infrastructure provider      |
+| **Container**        | ECS Fargate               | Serverless container orchestration |
+| **Database**         | Amazon RDS MySQL          | Managed database                   |
+| **Storage**          | Amazon EFS                | Shared file storage                |
+| **Load Balancer**    | Application Load Balancer | Traffic routing                    |
+| **DNS**              | Route53                   | Domain management                  |
+| **CI/CD**            | GitHub Actions            | Automation pipeline                |
+| **Deployment**       | AWS CodeDeploy            | Blue-green deployments             |
+| **IaC**              | Terraform                 | Infrastructure provisioning        |
+| **Containerization** | Docker                    | Application packaging              |
 
 ## 📋 Prerequisites
 
@@ -234,15 +234,15 @@ aws configure
 
 Navigate to your repository's **Settings → Secrets and variables → Actions** and add:
 
-| Secret | Description | Example |
-|--------|-------------|---------|
-| `AWS_REGION` | AWS region | `us-west-2` |
-| `AWS_ACCOUNT_ID` | AWS account ID | `123456789012` |
-| `AWS_ROLE_ARN` | IAM role for deployment | `arn:aws:iam::...` |
-| `ECR_REPOSITORY` | ECR repository name | `wordpress` |
-| `ECS_CLUSTER` | ECS cluster name | `wordpress-cluster` |
-| `ECS_SERVICE` | ECS service name | `wordpress-primary` |
-| `DOMAIN_NAME` | Your domain | `example.com` |
+| Secret           | Description             | Example             |
+| ---------------- | ----------------------- | ------------------- |
+| `AWS_REGION`     | AWS region              | `us-west-2`         |
+| `AWS_ACCOUNT_ID` | AWS account ID          | `123456789012`      |
+| `AWS_ROLE_ARN`   | IAM role for deployment | `arn:aws:iam::...`  |
+| `ECR_REPOSITORY` | ECR repository name     | `wordpress`         |
+| `ECS_CLUSTER`    | ECS cluster name        | `wordpress-cluster` |
+| `ECS_SERVICE`    | ECS service name        | `wordpress-primary` |
+| `DOMAIN_NAME`    | Your domain             | `example.com`       |
 
 ### 4. Configure Terraform Variables
 
